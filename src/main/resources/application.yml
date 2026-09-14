@@ -1,0 +1,36 @@
+server:
+  port: 8080
+
+spring:
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          jwk-set-uri: https://auth.example.com/.well-known/jwks.json
+  main:
+    allow-bean-definition-overriding: true
+  mvc:
+    pathmatch:
+      matching-strategy: ant_path_matcher
+
+  # ------------------------------------------------------------
+  # Perfil activo (traido del lab03):
+  #   postgres  -> PostgresBlueprintPersistence (base de datos)
+  #   default   -> InMemoryBlueprintPersistence (mapa en RAM)
+  # Se puede sobreescribir sin recompilar:
+  #   mvn spring-boot:run -Dspring-boot.run.profiles=default
+  # ------------------------------------------------------------
+  profiles:
+    active: postgres
+
+  # Conexion a PostgreSQL. Los ${VAR:valor} permiten sobreescribir por variable de entorno.
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:blueprintsdb}
+    username: ${DB_USER:blueprints}
+    password: ${DB_PASSWORD:blueprints123}
+    driver-class-name: org.postgresql.Driver
+
+blueprints:
+  security:
+    issuer: "https://decsis-eci/blueprints"
+    token-ttl-seconds: 3600
