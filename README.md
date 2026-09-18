@@ -2,6 +2,7 @@
 ## Arquitectura de Software – ARSW
 ### Laboratorio – Parte 2: BluePrints API con Seguridad JWT (OAuth 2.0)
 
+**Integrantes:** Sebastian Castillejo - Rafael Moreno
 Este laboratorio extiende la **Parte 1** ([Lab_P1_BluePrints_Java21_API](https://github.com/DECSIS-ECI/Lab_P1_BluePrints_Java21_API)) agregando **seguridad a la API** usando **Spring Boot 3, Java 21 y JWT (OAuth 2.0)**.  
 El API se convierte en un **Resource Server** protegido por tokens Bearer firmados con **RS256**.  
 Incluye un endpoint didáctico `/auth/login` que emite el token para facilitar las pruebas.
@@ -57,7 +58,7 @@ Respuesta:
 {
   "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
   "token_type": "Bearer",
-  "expires_in": 3600
+  "expires_in": 30
 }
 ```
 
@@ -238,7 +239,90 @@ Con estas pruebas se ve la diferencia entre los códigos:
 
 
 4. Modificar el tiempo de expiración del token y observar el efecto.
+
+El tiempo de vida no está quemado en el `AuthController`, sale de `application.yml`:
+
+```
+blueprints:
+  security:
+    issuer: "https://decsis-eci/blueprints"
+    token-ttl-seconds: 30
+```
+
+estaba en 3600 (1 hora) y lo bajamos a 30 segundos para poder ver el vencimiento sin quedarnos esperando una hora. `RsaKeyProperties` lee ese valor por el prefix `blueprints.security`, y en el login se usa así:
+
+```
+long ttl = props.tokenTtlSeconds() != null ? props.tokenTtlSeconds() : 3600;
+Instant exp = now.plusSeconds(ttl);
+```
+
+ese `ttl` se pone en el claim `exp` y también en el `expires_in` de la respuesta, entonces si se cambia el yml se cambia todo junto. El `JwtDecoder` no hay que tocarlo: él solo mira si `exp` ya pasó.
+
+# pruebas
+
+1) `POST /auth/login` con student / student123. Antes `expires_in` venía en 3600, ahora sale 30:
+
+```json
+{
+  "access_token": "eyJhbGciOiJSUzI1NiJ9...",
+  "token_type": "Bearer",
+  "expires_in": 30
+}
+```
+
+2) el payload (la parte de en medio del JWT, en jwt.io) queda:
+
+```json
+{
+  "iss": "https://decsis-eci/blueprints",
+  "sub": "student",
+  "exp": 1789707844,
+  "iat": 1789707814,
+  "scope": "blueprints.read blueprints.write"
+}
+```
+
+`exp - iat = 30`, o sea que el cambio del yml sí quedó dentro del token, no solo en el JSON del login.
+
+3) con ese token todavía fresco, `GET /api/v1/blueprints` con `Authorization: Bearer ...` responde 200 `execute ok` y la lista de john / jane. El token es válido, no hay misterio.
+
+4) esperamos un poco más de 30 segundos y repetimos el mismo GET, con el mismo token, sin hacer login otra vez. Acá nos extrañó: a los 35 segundos todavía daba 200. Resulta que el `NimbusJwtDecoder` de Spring trae 60 segundos de holgura (clock skew) por si el reloj del servidor y el del emisor no coinciden exacto. Como el ttl es 30, en la práctica el token aguanta más o menos 90 segundos.
+
+cuando ya pasó ese rato (esperamos ~95 s) el GET ya no pasa: 401, sin body, y en la cabecera:
+
+```
+WWW-Authenticate: Bearer error="invalid_token", error_description="An error occurred while attempting to decode the Jwt: Jwt expired at 2026-09-18T05:04:04Z"
+```
+
+o sea Spring ni siquiera entra al controlador ni mira el scope. El token ya no sirve. Para seguir hay que hacer login otra vez y sacar uno nuevo.
+
+esto es distinto al 403 del punto 3: allá el token estaba bien firmado y vigente, solo le faltaba `blueprints.write`. Acá el token ya venció, entonces es 401, igual que si no se mandara nada.
+
+
 5. Documentar en Swagger los endpoints de autenticación y de negocio.
+
+`OpenApiConfig` ya tenía el esquema `bearer-jwt` global, por eso en Swagger sale el botón Authorize y todos los endpoints de `/api/v1/blueprints` aparecen con candado. Eso cubre el negocio. Lo que no estaba era el login.
+
+en `AuthController` se agregó:
+
+- `@Tag(name = "Auth")` para que en swagger-ui salga un grupo aparte, no mezclado con los planos
+- `@Operation` en `POST /auth/login`, con 200 y 401
+- `@Schema` en `LoginRequest` y `TokenResponse` (username student, password student123) para no tener que adivinar el body
+- `@SecurityRequirements` vacío en el login. Si no se pone, el candado global también se aplica al endpoint que justamente da el token, y toca autorizarse para poder autorizarse, que no tiene sentido. En el openapi queda `"security": []` en `/auth/login`
+
+el stub de `BlueprintController` (`/api/blueprints`, el de la plantilla del lab) se marcó con `@Hidden`. Si no, en swagger aparecen dos APIs de planos y confunde: la que se usa es `/api/v1/blueprints`.
+
+al abrir http://localhost:8080/swagger-ui/index.html quedan dos tags: Auth y Blueprints. Auth tiene el `POST /auth/login` sin candado. Blueprints tiene los GET / POST / PUT del lab P1 con candado.
+
+el flujo que usamos para probar desde ahí:
+
+1. Expandir Auth, Try it out, mandar student / student123. Sale 200 con `access_token`, `token_type: Bearer` y `expires_in: 30`.
+2. Copiar el `access_token`, pulsar Authorize arriba y pegarlo (swagger ya pone Bearer).
+3. Ir a `GET /api/v1/blueprints`, Try it out, Execute. El curl lleva `Authorization: Bearer ...` y responde 200 con los planos.
+
+si se espera demasiado (por el ttl de 30 s más los 60 s de holgura) el mismo Execute ya da 401 Jwt expired, y hay que repetir el login. Por eso para las pruebas de swagger conviene sacar el token y usarlo de una.
+
+con esto login y negocio quedan documentados en el mismo swagger, y se puede hacer todo el recorrido sin postman.
 
 ---
 

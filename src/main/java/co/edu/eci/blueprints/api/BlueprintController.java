@@ -1,11 +1,13 @@
 package co.edu.eci.blueprints.api;
 
+import io.swagger.v3.oas.annotations.Hidden;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
 
+@Hidden
 @RestController
 @RequestMapping("/api/blueprints")
 public class BlueprintController {
