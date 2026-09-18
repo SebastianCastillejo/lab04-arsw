@@ -2,7 +2,8 @@
 ## Arquitectura de Software – ARSW
 ### Laboratorio – Parte 2: BluePrints API con Seguridad JWT (OAuth 2.0)
 
-**Integrantes:** Sebastian Castillejo - Rafael Moreno
+## Integrantes: Sebastian Castillejo - Rafael Moreno
+
 Este laboratorio extiende la **Parte 1** ([Lab_P1_BluePrints_Java21_API](https://github.com/DECSIS-ECI/Lab_P1_BluePrints_Java21_API)) agregando **seguridad a la API** usando **Spring Boot 3, Java 21 y JWT (OAuth 2.0)**.  
 El API se convierte en un **Resource Server** protegido por tokens Bearer firmados con **RS256**.  
 Incluye un endpoint didáctico `/auth/login` que emite el token para facilitar las pruebas.
